@@ -2,3 +2,5 @@
 *.out
 # exclued log files
 *.txt
+#ignore vscode files
+~/.vscode-root
