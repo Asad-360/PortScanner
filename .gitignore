@@ -1,4 +1,0 @@
-# .out file is ignored
-*.out
-# exclued log files
-*.txt
