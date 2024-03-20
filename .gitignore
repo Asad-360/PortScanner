@@ -4,3 +4,8 @@
 *.txt
 #ignore vscode files
 ~/.vscode-root
+*.o
+*.a
+sps
+*.s
+main

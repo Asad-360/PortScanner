@@ -1,4 +1,4 @@
-#include "sniffers.h"
+#include "sniffer.h"
 static void sniff_network(struct in_addr server_ip, const unsigned int port);
 static void print_result(unsigned int port, enum status st);
 

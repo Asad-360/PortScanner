@@ -1,168 +1,158 @@
-#include <stdio.h> // printf, puts, perror
-#include <stdlib.h> // malloc
+
+
+#include <stdbool.h>
+#include <stdio.h> // printf, puts
+#include <getopt.h> // getopt_long
 #include <string.h> // memset
+#include <stdlib.h> // malloc, atoi
 #include <unistd.h> // close syscall
-#include <netinet/tcp.h> // TCP header
-#include <netinet/udp.h> // UDP header
-#include <netinet/ip_icmp.h> // ICMP header
-#include <netinet/ip.h> // IP header
-#include <sys/socket.h> // Socket's APIs
+#include <ctype.h> // isdigit
+#include <sys/socket.h> // socket APIs
 #include <arpa/inet.h> // inet_ntoa
-#include <signal.h> // signal
+#include <netinet/tcp.h> // TCP header
+#include <netinet/ip.h> // IP header
+#include <netdb.h> // gethostbyname
+#include <time.h> // for localtime
 
-/* 
-    * Simple TCP packet sniffer.
-    * Inspired by https://www.binarytides.com/packet-sniffer-code-c-linux/
-    * Compile it with gcc -Wall -Wextra -Werror sniffer.c -o sniffer
-    */
 
+
+#include "scanner.h"
+#define HELPER_MSG(name) printf("Try \"%s --help\" for more information.\n", name)
+#define MAX_PORTBUF_SIZE 1024
 #define BUF_SIZE 65536
+#define DNS_SERVER "1.1.1.1"
+#define DNS_SERVER_PORT 53
+#define VERSION "0.0.1"
+//typedef enum {false, true} bool; // Implement bool type
+// Private methods
+static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
+//static const char *resolve_hostname(const char *address);
+static void get_client_ip(char *ip_addr);
 
-static void decode_packet(unsigned char *buf, size_t length, FILE *lf);
-static void print_content(unsigned char *buf, size_t length, FILE *lf);
-
-void sigint_handler() {
-    // Exit gracefully. This ensures that the kernel
-    // will close the log file and will free other resources
-    exit(0); 
+void helper() {
+    puts("SPS is a SYN TCP port scanner for GNU/Linux systems\n"
+         "-s, --hostname HOST           | Set hostname to scan\n"
+         "-p, --ports <PORT1,PORT2,...> | Check if port is open\n"
+         "-h, --help                    | Print this helper\n"
+         "-a, --about                   | About this tool\n"
+         "Example: ./sps -s scanme.nmap.org -p 22,80\n"
+    );
+}
+// Parse a comma-separated list of ports into an array of integers
+static unsigned int parse_ports_list(char *port_list, int *formatted_port_list) {
+    unsigned int count = 0;
+    char *token = strtok(port_list, ",");
+    
+    while (token != NULL) {
+        formatted_port_list[count++] = atoi(token);
+        token = strtok(NULL, ",");
+    }
+    
+    return count;
 }
 
+// Resolve hostname to IP address
+// static const char *resolve_hostname(const char *address) {
+//     struct hostent *host_entry;
+//     struct in_addr **addr_list;
+//     char *ip_addr = (char *)malloc(INET_ADDRSTRLEN * sizeof(char));
+
+//     if ((host_entry = gethostbyname(address)) == NULL) {
+//         return NULL;
+//     }
+
+//     addr_list = (struct in_addr **)host_entry->h_addr_list;
+//     strcpy(ip_addr, inet_ntoa(*addr_list[0]));
+
+//     return ip_addr;
+// }
+
+// Get the IP address of the client
+static void get_client_ip(char *ip_addr) {
+    char hostname[256];
+    struct hostent *host_entry;
+    struct in_addr **addr_list;
+
+    gethostname(hostname, sizeof(hostname));
+    host_entry = gethostbyname(hostname);
+    addr_list = (struct in_addr **)host_entry->h_addr_list;
+
+    strcpy(ip_addr, inet_ntoa(*addr_list[0]));
+}
 int main(int argc, char **argv) {
-    int raw_sock = 0, psize = 0; // Raw socket file descriptor and packet size
-    unsigned char *buf = (unsigned char*)malloc(BUF_SIZE);
+    printf("Hello\n");
+    // Compute execution time
+    double duration = 0.0;
+    clock_t begin = clock();
 
-    if(argc != 2) {
-        printf("Usage: %s <FILE>\n", argv[0]);
+    if(argc < 2) { // Check argument count
+        HELPER_MSG(argv[0]);
+        printf("Hello");
         return 1;
     }
 
-    // Try to open log file
-    FILE *log_file = fopen(argv[1], "w");
-    if(log_file == NULL) {
-        perror("Unable to open logfile");
-        return 1;
-    }
+    int sock_fd = 0; // Raw socket file descriptor
+    struct in_addr server_ip;
+    int ports[MAX_PORTBUF_SIZE] = {0}; // Port to be scanned
+    unsigned int p_count = 0;
+    const char *host; // Target host
+    char ip_addr[MAX_PORTBUF_SIZE]; // Local IP address
+    int opt = 0;
+    const char *short_opts = "p:s:ha";
+    bool is_hostopt_enable = false ,is_portopt_enable = false;
+    struct option long_opts[] = {
+        {"hostname", required_argument, NULL, 's'},
+        {"ports", required_argument, NULL, 'p'},
+        {"help", no_argument, NULL, 'h'},
+        {"about", no_argument, NULL, 'a'},
+        {NULL, 0, NULL, 0}
+    };
 
-    // Create a raw socket(TCP socket only)
-    raw_sock = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
-    if(raw_sock == -1) {
-        perror("Unable to create raw socket");
-        return 1;
-    }
-
-    // Ensure that a SIGINT will cause a gracefully exit.
-    // Any other signal may not correctly free allocated resources
-    // such as the logfile, buffer and the raw socket.
-    signal(SIGINT, sigint_handler);
-
-    puts("Starting...");
-
-    // Continue retrieving packages
-    for(;;) {
-        psize = recvfrom(raw_sock, buf, BUF_SIZE, 0, NULL, NULL); // return the number of bytes read or -1 in case of error
-        if(psize == -1) {
-            perror("Unable to retrieve data from socket");
-            return 1;
-        }
-        // Extract information from raw packages and print them
-        decode_packet(buf, psize, log_file);
-    }
-
-    return 0;
-}
-
-// Decode function, used to print TCP/IP header and payload
-void decode_packet(unsigned char *buf, size_t length, FILE *lf) {
-    fprintf(lf, "\n\n################### TCP PACKET ###################");
-    // Print IP header first
-    struct iphdr *ip_head = (struct iphdr*)buf;
-    struct sockaddr_in ip_source, ip_dest;
-    unsigned short ip_head_len = ip_head->ihl*4;
-    static int packet_count = 0;
-
-    memset(&ip_source, 0, sizeof(ip_source));
-    memset(&ip_dest, 0, sizeof(ip_dest));
-    ip_source.sin_addr.s_addr = ip_head->saddr; // Get source IP address
-    ip_dest.sin_addr.s_addr = ip_head->daddr; // Get destination IP address
-
-    fprintf(lf, "\nIP header\n");
-    fprintf(lf, "   Version              : %d\n", (unsigned int)ip_head->version);
-    fprintf(lf, "   HELEN                : %d Bytes\n", ((unsigned int)(ip_head->ihl))*4);
-    fprintf(lf, "   TOS                  : %d\n", (unsigned int)ip_head->tos);
-    fprintf(lf, "   Total length         : %d Bytes\n", ntohs(ip_head->tot_len));
-    fprintf(lf, "   Identification       : %d\n", ntohs(ip_head->id));
-    fprintf(lf, "   Time-To-Live         : %d\n", (unsigned int)(ip_head->ttl));
-    fprintf(lf, "   Protocol             : %d\n", (unsigned int)(ip_head->protocol));
-    fprintf(lf, "   Checsum              : %d\n", (unsigned int)(ip_head->check));
-    fprintf(lf, "   Source IP            : %s\n", inet_ntoa(ip_source.sin_addr));
-    fprintf(lf, "   Destination IP       : %s\n", inet_ntoa(ip_dest.sin_addr));
-
-    // Print TCP header
-    struct tcphdr *tcp_head = (struct tcphdr*)(buf + ip_head_len);
-
-    fprintf(lf, "\nTCP header\n");
-    fprintf(lf, "   Source port          : %u\n", ntohs(tcp_head->source));
-    fprintf(lf, "   Destination port     : %u\n", ntohs(tcp_head->dest));
-    fprintf(lf, "   Sequence number      : %u\n", ntohl(tcp_head->seq));
-    fprintf(lf, "   Ack number           : %u\n", ntohl(tcp_head->ack_seq));
-    fprintf(lf, "   Header length        : %u Bytes\n", (unsigned int)tcp_head->doff*4);
-    fprintf(lf, "   UFLAG                : %u\n", (unsigned int)tcp_head->urg);
-    fprintf(lf, "   AFLAG                : %u\n", (unsigned int)tcp_head->ack);
-    fprintf(lf, "   PFLAG                : %u\n", (unsigned int)tcp_head->psh);
-    fprintf(lf, "   RFLAG                : %u\n", (unsigned int)tcp_head->rst);
-    fprintf(lf, "   SFLAG                : %u\n", (unsigned int)tcp_head->syn);
-    fprintf(lf, "   FFLAG                : %u\n", (unsigned int)tcp_head->fin);
-    fprintf(lf, "   Window               : %u\n", htons(tcp_head->window));
-    fprintf(lf, "   Checksum             : %u\n", htons(tcp_head->check));
-    fprintf(lf, "   urgent Pointer       : %u\n", htons(tcp_head->urg_ptr));
-    fprintf(lf, "\n\t\t\t ..::: DATA :::..\n");
-
-    // Print IP header content
-    fprintf(lf, "IP header DATA\n");
-    print_content(buf, ip_head_len, lf);
-
-    // Print TCP header content
-    fprintf(lf, "TCP header DATA\n");
-    print_content(buf+ip_head_len, tcp_head->doff*4, lf);
-
-    // Print PAYLOAD content
-    fprintf(lf, "Payload DATA\n");
-    print_content(buf+ip_head_len+tcp_head->doff*4, (length - tcp_head->doff*4-ip_head->ihl*4), lf);
-
-    // We print to stderr since it is not buffered
-    fprintf(stderr, "Captured %d TCP packet(s)\r", ++packet_count);
-}
-
-void print_content(unsigned char *buf, size_t length, FILE *lf) {
-    for(size_t i = 0; i < length; i++) {
-        if(i != 0 && i % 16 == 0) {
-            fprintf(lf, "          ");
-            for(size_t j = (i-16); j < i; j++) {
-                if(buf[j] >= 32 && buf[j] <= 128) { // print "printable" characters
-                    fprintf(lf, "%c", (unsigned char)buf[j]);
-                } else {
-                    fprintf(lf, "."); // Otherwise, add a dot
+    // parse command line parameters
+    while((opt = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) {
+        switch (opt) {
+        case 's': {
+                // Check if host is null
+                if(optarg[0] == '\0') {
+                    printf("Error: \"-s\" parameter requires exactly one value.\n");
+                    return 1;
                 }
+                // Save host parameter
+                host = optarg, is_hostopt_enable = true;
             }
-            fprintf(lf, "\n");
-        }
-
-        if(i%16==0)
-            fprintf(lf, "    ");
-        fprintf(lf, " %02X", (unsigned int)buf[i]);
-
-        if(i == (length-1)) {
-            for(size_t j = 0; j < (15-1%16); j++)
-                fprintf(lf, "    ");
-            fprintf(lf, "          ");
-
-            for(size_t j=(i-i%16); j <= 1; j++) {
-                if(buf[j] >= 32 && buf[j] <= 128)
-                    fprintf(lf, "%c", (unsigned char)buf[j]);
-                else
-                    fprintf(lf, ".");
+            break;
+        case 'p': {
+                // Check if port list is empty
+                if(optarg[0] == '\0') {
+                    printf("Error: \"-p\" parameter requires at least one value.\n");
+                    return 1;
+                }
+                // Parse port list
+                p_count = parse_ports_list(optarg, ports);
+                is_portopt_enable = true;
             }
-            fprintf(lf, "\n");
-        }
+            break;
+        case 'a':
+            #ifdef __STDC_VERSION__
+                printf("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
+            Developed by Marco Cetica 2021\n\
+                STDC_VERSION: %ld\n", __STDC_VERSION__);
+            #else
+                puts("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
+                    Developed by Marco Cetica 2021\n");
+            #endif
+            return 0;
+        
+        case 'h':
+            helper();
+            return 0;
+            
+        case ':':
+        case '?':
+        default:
+            return 1;
+        
+          //  return 1;        
     }
-}
+    }
+    }
