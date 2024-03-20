@@ -28,6 +28,7 @@
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
 //static const char *resolve_hostname(const char *address);
 static void get_client_ip(char *ip_addr);
+static char* hostname_to_ip(char * hostname);
 
 void helper() {
     puts("SPS is a SYN TCP port scanner for GNU/Linux systems\n"
@@ -79,6 +80,30 @@ static void get_client_ip(char *ip_addr) {
 
     strcpy(ip_addr, inet_ntoa(*addr_list[0]));
 }
+// Convert hostname in array to ip address
+char* hostname_to_ip(char * hostname)
+{
+	struct hostent *he;
+	struct in_addr **addr_list;
+	int i;
+		
+	if ( (he = gethostbyname( hostname ) ) == NULL) 
+	{
+		// get the host info
+		herror("gethostbyname");
+		return NULL;
+	}
+
+	addr_list = (struct in_addr **) he->h_addr_list;
+	
+	for(i = 0; addr_list[i] != NULL; i++) 
+	{
+		//Return the first one;
+		return inet_ntoa(*addr_list[i]) ;
+	}
+	
+	return NULL;
+}
 int main(int argc, char **argv) {
     printf("Hello\n");
     // Compute execution time
@@ -107,70 +132,95 @@ int main(int argc, char **argv) {
         {"about", no_argument, NULL, 'a'},
         {NULL, 0, NULL, 0}
     };
-    #pragma region New Variables
-    //Datagram to represent the packet
-	char datagram[4096];
-
-    // Destination IP
-    struct in_addr dest_ip;
-
-    // Source Ip
-	char source_ip[20];
-    
-    get_client_ip(source_ip);
-    //IP header
-	struct iphdr *iph = (struct iphdr *) datagram;
-	
-	//TCP header
-	struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
-
-    setup_datagram(datagram,dest_ip,source_ip,iph,tcph);
-    #pragma endregion
     // parse command line parameters
-    while((opt = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) {
-        switch (opt) {
-        case 's': {
-                // Check if host is null
-                if(optarg[0] == '\0') {
-                    printf("Error: \"-s\" parameter requires exactly one value.\n");
-                    return 1;
+        while((opt = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) 
+        {
+            switch (opt) {
+            case 's': {
+                    // Check if host is null
+                    if(optarg[0] == '\0') {
+                        printf("Error: \"-s\" parameter requires exactly one value.\n");
+                        return 1;
+                    }
+                    // Save host parameter
+                    host = optarg, is_hostopt_enable = true;
                 }
-                // Save host parameter
-                host = optarg, is_hostopt_enable = true;
-            }
-            break;
-        case 'p': {
-                // Check if port list is empty
-                if(optarg[0] == '\0') {
-                    printf("Error: \"-p\" parameter requires at least one value.\n");
-                    return 1;
+                break;
+            case 'p': {
+                    // Check if port list is empty
+                    if(optarg[0] == '\0') {
+                        printf("Error: \"-p\" parameter requires at least one value.\n");
+                        return 1;
+                    }
+                    // Parse port list
+                    p_count = parse_ports_list(optarg, ports);
+                    is_portopt_enable = true;                
                 }
-                // Parse port list
-                p_count = parse_ports_list(optarg, ports);
-                is_portopt_enable = true;
-            }
-            break;
-        case 'a':
-            #ifdef __STDC_VERSION__
-                printf("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
-            Developed by Asad 2021\n\
-                STDC_VERSION: %ld\n", __STDC_VERSION__);
-            #else
-                puts("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
-                    Developed by Asad 2021\n");
-            #endif
-            return 0;
-        
-        case 'h':
-            helper();
-            return 0;
+                break;
+            case 'a':
+                #ifdef __STDC_VERSION__
+                    printf("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
+                Developed by Asad 2021\n\
+                    STDC_VERSION: %ld\n", __STDC_VERSION__);
+                #else
+                    puts("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
+                        Developed by Asad 2021\n");
+                #endif
+                return 0;
             
-        case ':':
-        case '?':
-        default:
-            return 1;
-        
-          //  return 1;        
-    }
-    }
+            case 'h':
+                helper();
+                return 0;
+                
+            case ':':
+            case '?':
+            default:
+                return 1;
+            
+            
+                
+        }
+        } // end of while
+            if (is_hostopt_enable && is_portopt_enable)
+            {
+                #pragma Datagram and send request
+                //Datagram to represent the packet
+                char datagram[4096];
+
+                // Destination IP
+                struct in_addr dest_ip;
+
+                // Source Ip
+                char source_ip[20];
+                char server_ip [20];
+                get_client_ip(source_ip);
+                //IP header
+                struct iphdr *iph = (struct iphdr *) datagram;
+                
+                //TCP header
+                struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
+
+
+                #pragma endregion
+                    int s = socket (AF_INET, SOCK_RAW , IPPROTO_TCP);
+
+                    for (unsigned int i = 0; i < p_count; i++)
+                    {
+                        int port = ports[i];
+                        char * ip =  hostname_to_ip(host);
+                        if(ip != NULL)
+                        {
+                            printf("%s resolved to %s \n" , host , ip);
+                            //Convert domain name to IP
+                            dest_ip.s_addr = inet_addr(ip);  
+                            setup_datagram(datagram,dest_ip,source_ip,iph,tcph);
+                            scan_port(s,datagram,dest_ip,source_ip,tcph,port);                      
+                        }
+                        else
+                        {
+                            printf("Unable to resolve hostname : %s" , host);
+                            exit(1);
+                        }
+                    }
+            }
     }

@@ -39,7 +39,9 @@ void sniff_network(struct in_addr server_ip, const unsigned int port) {
     struct tcphdr *tcp_head = (struct tcphdr*)(buf + ip_head_len);
     memset(&source, 0, sizeof(source));
     source.sin_addr.s_addr = ip_head->saddr;
-
+		memset(&server_ip, 0, sizeof(server_ip));
+		server_ip.s_addr = ip_head->daddr;
+        
     if(ip_head->protocol == IPPROTO_TCP) {
         // Now check whether it's a SYN-ACK packet or not
         if(tcp_head->syn == 1 && tcp_head->ack == 1 && source.sin_addr.s_addr == server_ip.s_addr)
