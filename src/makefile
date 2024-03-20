@@ -5,10 +5,12 @@ LFLAGS = -lpthread
 
 all: $(TARGET)
 
-$(TARGET): main.o scanner.a sniffer.a
+$(TARGET): main.o scanner.a sniffer.a main
 	$(CC) $(CFLAGS) $(LFLAGS) $^ -o $@
 
 main.o: main.c
+	$(CC) $(CFLAGS) -c $< -o $@
+main: main.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 sniffer.a: sniffer.o

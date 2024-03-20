@@ -107,7 +107,25 @@ int main(int argc, char **argv) {
         {"about", no_argument, NULL, 'a'},
         {NULL, 0, NULL, 0}
     };
+    #pragma region New Variables
+    //Datagram to represent the packet
+	char datagram[4096];
 
+    // Destination IP
+    struct in_addr dest_ip;
+
+    // Source Ip
+	char source_ip[20];
+    
+    get_client_ip(source_ip);
+    //IP header
+	struct iphdr *iph = (struct iphdr *) datagram;
+	
+	//TCP header
+	struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
+
+    setup_datagram(datagram,dest_ip,source_ip,iph,tcph);
+    #pragma endregion
     // parse command line parameters
     while((opt = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) {
         switch (opt) {
@@ -135,11 +153,11 @@ int main(int argc, char **argv) {
         case 'a':
             #ifdef __STDC_VERSION__
                 printf("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
-            Developed by Marco Cetica 2021\n\
+            Developed by Asad 2021\n\
                 STDC_VERSION: %ld\n", __STDC_VERSION__);
             #else
                 puts("SRS - a SYN TCP port scanner for GNU/Linux systems.\n\
-                    Developed by Marco Cetica 2021\n");
+                    Developed by Asad 2021\n");
             #endif
             return 0;
         

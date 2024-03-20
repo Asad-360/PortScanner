@@ -38,6 +38,7 @@ struct datagram_header {
 void setup_datagram(char *datagram, struct in_addr server_ip, const char *client_ip, struct iphdr *ip_head,  struct tcphdr *tcp_head);
 unsigned short scan_port(int sock_fd, char *datagram, struct in_addr server_ip, const char *client_ip, struct tcphdr *tcp_head, unsigned int target_port);
 unsigned short compute_checksum(unsigned short *dgm, int bytes); 
+int get_local_ip ( char * buffer);
 
 
 #endif

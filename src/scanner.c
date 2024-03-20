@@ -111,3 +111,32 @@ unsigned short compute_checksum(unsigned short *dgm, int bytes) {
 
     return answer;
 }
+
+/*
+ Get source IP of system , like 192.168.0.6 or 192.168.1.2
+ */
+
+int get_local_ip ( char * buffer)
+{
+	int sock = socket ( AF_INET, SOCK_DGRAM, 0);
+
+	const char* kGoogleDnsIp = "8.8.8.8";
+	int dns_port = 53;
+
+	struct sockaddr_in serv;
+
+	memset( &serv, 0, sizeof(serv) );
+	serv.sin_family = AF_INET;
+	serv.sin_addr.s_addr = inet_addr(kGoogleDnsIp);
+	serv.sin_port = htons( dns_port );
+
+	int err = connect( sock , (const struct sockaddr*) &serv , sizeof(serv) );
+
+	struct sockaddr_in name;
+	socklen_t namelen = sizeof(name);
+	err = getsockname(sock, (struct sockaddr*) &name, &namelen);
+
+	const char *p = inet_ntop(AF_INET, &name.sin_addr, buffer, 100);
+
+	close(sock);
+}
