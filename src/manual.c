@@ -170,8 +170,6 @@ void Syn(int s ,  const struct in_addr *source_ip , int source_port,  const stru
 	dest.sin_family = AF_INET;
 	dest.sin_addr.s_addr = dest_ip->s_addr;
 
-	//tcph->dest = htons (dest_port);
-	//tcph->check = 0;	// if you set a checksum to zero, your kernel's IP stack should fill in the correct checksum during transmission
 		
 	psh.source_address = source_ip->s_addr;
 	psh.dest_address = dest.sin_addr.s_addr;
