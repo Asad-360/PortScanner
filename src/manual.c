@@ -15,7 +15,9 @@
 
 void * receive_ack( void *ptr );
 void process_packet(unsigned char* , int);
-void process_packet_new(unsigned char* , int);
+void process_packet_new(unsigned char *, int);
+
+struct in_addr setup_source_ip();
 
 unsigned short csum(unsigned short * , int );
 char * hostname_to_ip(char * );
@@ -33,7 +35,7 @@ struct pseudo_header    //needed for checksum calculation
 };
 
 struct in_addr dest_ip;
-struct in_addr source_ip;
+//struct in_addr source_ip;
 
 int main(int argc, char *argv[])
 {
@@ -50,14 +52,10 @@ int main(int argc, char *argv[])
 	}
 	
 	char *target = argv[1];
-	// source ip to inet_adr_t
-	char source_ip_buffer[20];
-	get_local_ip( source_ip_buffer );
-	in_addr_t source_in_adr_t =inet_addr(source_ip_buffer);
-	source_ip.s_addr = source_in_adr_t;
-	printf("Top:Local source IP is %s \n" , source_ip_buffer);
+	// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
+    struct in_addr source_ip = setup_source_ip();
 
-	if(argc < 2)
+    if(argc < 2)
 	{
 		printf("Please specify a hostname \n");
 		exit(1);
@@ -108,6 +106,16 @@ int main(int argc, char *argv[])
 	printf("%d" , iret1);
 	
 	return 0;
+}
+/// @brief This function get local ip address of the system and return its in_addr format suitable for raw protocol to be used in ipheader
+struct in_addr setup_source_ip()
+{
+	struct in_addr source_ip;
+    char source_ip_buffer[20];
+    get_local_ip(source_ip_buffer);
+    in_addr_t source_in_adr_t = inet_addr(source_ip_buffer);
+    source_ip.s_addr = source_in_adr_t;
+	return source_ip;
 }
 
 /// @brief Send syn request
