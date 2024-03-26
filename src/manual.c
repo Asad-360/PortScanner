@@ -33,6 +33,7 @@ struct pseudo_header    //needed for checksum calculation
 };
 
 struct in_addr dest_ip;
+struct in_addr source_ip;
 
 int main(int argc, char *argv[])
 {
@@ -49,7 +50,13 @@ int main(int argc, char *argv[])
 	}
 	
 	char *target = argv[1];
-	
+	// source ip to inet_adr_t
+	char source_ip_buffer[20];
+	get_local_ip( source_ip_buffer );
+	in_addr_t source_in_adr_t =inet_addr(source_ip_buffer);
+	source_ip.s_addr = source_in_adr_t;
+	printf("Top:Local source IP is %s \n" , source_ip_buffer);
+
 	if(argc < 2)
 	{
 		printf("Please specify a hostname \n");
@@ -91,10 +98,11 @@ int main(int argc, char *argv[])
 
 	printf("Starting to send syn packets\n");
 	//80,22,9929,11211,31337
-	Syn(s,&dest_ip,22);
-	Syn(s,&dest_ip,9929);
-	Syn(s,&dest_ip,11211);
-	Syn(s,&dest_ip,31337);
+	int sourcePort = 43591;
+	Syn(s,&source_ip , sourcePort,&dest_ip,22);
+	Syn(s,&source_ip , sourcePort,&dest_ip,9929);
+	Syn(s,&source_ip , sourcePort,&dest_ip,11211);
+	Syn(s,&source_ip , sourcePort,&dest_ip,31337);
 
 	pthread_join( sniffer_thread , NULL);
 	printf("%d" , iret1);
@@ -104,15 +112,9 @@ int main(int argc, char *argv[])
 
 /// @brief Send syn request
 /// @param s The socket file descriptor
-void Syn(int s ,  const struct in_addr *dest_ip , int dest_port)
+void Syn(int s ,  const struct in_addr *source_ip , int source_port,  const struct in_addr *dest_ip , int dest_port)
 {
-	int source_port = 22456;
-	char source_ip[20];
-	get_local_ip( source_ip );
-	
-	printf("Local source IP is %s \n" , source_ip);
-
-   	//Datagram to represent the packet
+	//Datagram to represent the packet
 	char datagram[4096];	
 	memset (datagram, 0, 4096);	/* zero out the buffer */
 
@@ -131,7 +133,7 @@ void Syn(int s ,  const struct in_addr *dest_ip , int dest_port)
 	iph->ttl = 64;
 	iph->protocol = IPPROTO_TCP;
 	iph->check = 0;		//Set to 0 before calculating checksum
-	iph->saddr = inet_addr ( source_ip );	//Spoof the source ip address
+	iph->saddr = source_ip->s_addr;	//Spoof the source ip address
 	iph->daddr = dest_ip->s_addr;
 	
 	iph->check = csum ((unsigned short *) datagram, iph->tot_len >> 1);
@@ -171,7 +173,7 @@ void Syn(int s ,  const struct in_addr *dest_ip , int dest_port)
 	//tcph->dest = htons (dest_port);
 	//tcph->check = 0;	// if you set a checksum to zero, your kernel's IP stack should fill in the correct checksum during transmission
 		
-	psh.source_address = inet_addr( source_ip );
+	psh.source_address = source_ip->s_addr;
 	psh.dest_address = dest.sin_addr.s_addr;
 	psh.placeholder = 0;
 	psh.protocol = IPPROTO_TCP;
