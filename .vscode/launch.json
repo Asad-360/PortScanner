@@ -5,8 +5,11 @@
             "name": "Debug sps",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main",
-            "args": ["-s", "scanme.nmap.org", "-p", "80,22,9929,11211,31337"],
+            "program": "${workspaceFolder}/src/man",
+            //"args": ["-s", "scanme.nmap.org", "-p", "80,22,9929,11211,31337"],
+            "args": [
+                "scanme.nmap.org"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

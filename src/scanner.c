@@ -24,7 +24,7 @@ void setup_datagram(char *datagram, struct in_addr server_ip, const char *client
     ip_head->check = compute_checksum((unsigned short*)datagram, ip_head->tot_len >> 1);
 
     // Setup TCP header
-    tcp_head->source = htons(46300); // Source port
+    tcp_head->source = htons(43591); // Source port
     tcp_head->dest = htons(80);
     tcp_head->seq = htonl(1105024978);
     tcp_head->ack_seq = 0;
