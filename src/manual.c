@@ -21,7 +21,7 @@ unsigned short csum(unsigned short * , int );
 char * hostname_to_ip(char * );
 int get_local_ip (char *);
 void send_syn_packet();
-
+int create_raw_tcp_socket();
 struct pseudo_header    //needed for checksum calculation
 {
 	unsigned int source_address;
@@ -40,7 +40,7 @@ struct receive_callback_args {
 int main(int argc, char *argv[])
 {
 	//Create a raw socket
-	int s = socket (AF_INET, SOCK_RAW , IPPROTO_TCP);
+	int s = create_raw_tcp_socket();
 	if(s < 0)
 	{
 		printf ("Error creating socket. Error number : %d . Error message : %s \n" , errno , strerror(errno));
@@ -58,12 +58,11 @@ int main(int argc, char *argv[])
         printf("Please specify a hostname \n");
         exit(1);
     }
-	char *tg = argv[1];
+	char *detination_ip_from_input = argv[1];
     //struct in_addr 
-	struct in_addr dest_ip = setup_destination_ip(tg);
+	struct in_addr dest_ip = setup_destination_ip(detination_ip_from_input);
 
-    printf("Starting sniffer thread...\n");
-	char *message1 = "Thread 1";
+    printf("Starting sniffer thread...\n");	
 	int  iret1;
 	pthread_t sniffer_thread;
 	struct receive_callback_args  receive_ack_args;
@@ -211,8 +210,21 @@ void * receive_callback( void *ptr )
 	start_packet_sniffing(dest_ip);
 }
 
-int start_packet_sniffing(struct in_addr dest_ip)
-{	
+/// @brief Create a new raw socket that receive 
+/// @brief TCP packets that the operating system sees, regardless of whether they are intended for your application or not.
+/// @brief Note:Requires superuser privileges or CAP_NET_RAW capability.
+/// @return Socket file descriptor
+int create_raw_tcp_socket() {
+    // Create a raw socket
+    int sock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sock_raw < 0) {
+        perror("Socket creation failed");
+        return -1;
+    }
+    return sock_raw;
+}
+
+int start_packet_sniffing(struct in_addr dest_ip){	
 	int saddr_size , data_size;
 	struct sockaddr saddr;
 	
@@ -222,7 +234,7 @@ int start_packet_sniffing(struct in_addr dest_ip)
 	fflush(stdout);
 	
 	//Create a raw socket that shall sniff
-	int sock_raw = socket(AF_INET , SOCK_RAW , IPPROTO_TCP);
+	int sock_raw = create_raw_tcp_socket();
 	
 	if(sock_raw < 0)
 	{
@@ -256,6 +268,7 @@ int start_packet_sniffing(struct in_addr dest_ip)
 	fflush(stdout);
 	return 0;
 }
+
 void process_ack_from_packet(unsigned char* buffer, int size , struct in_addr dest_ip) {
     // Get the IP Header part of this packet
     struct iphdr *iph = (struct iphdr*)buffer;
