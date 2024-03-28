@@ -1,10 +1,11 @@
 /*
 	TCP send_syn_packet port scanner code in C with Linux Sockets :)
 */
-
-#include <stdio.h>	//printf
-#include <string.h> //memset
-#include <stdlib.h> //for exit(0);
+#include <stdbool.h> // for boolean
+#include <stdio.h>	 //printf
+#include <string.h>	 //memset
+#include <stdlib.h>	 //for exit(0);
+#include <getopt.h>	 // getopt_long
 #include <sys/socket.h>
 #include <errno.h> //For errno - the error number
 #include <pthread.h>
@@ -13,7 +14,7 @@
 #include <netinet/tcp.h> //Provides declarations for tcp header
 #include <netinet/ip.h>	 //Provides declarations for ip header
 
-#pragma region Callback functions
+#pragma region callback functions
 typedef void (*CallbackFunc)(const char *);
 void print_callback_message(const char *message);
 void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, CallbackFunc callback);
@@ -30,6 +31,8 @@ void send_syn_packet();
 int create_raw_tcp_socket();
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
 int start_packet_sniffing(struct in_addr dest_ip);
+
+#pragma structs section
 struct pseudo_header // needed for checksum calculation
 {
 	unsigned int source_address;
@@ -45,35 +48,96 @@ struct receive_callback_args
 	struct in_addr dest_ip;
 };
 
+#pragma endregion
 int main(int argc, char *argv[])
 {
+	int opt;
+	int option_index = 0;
+	const char *host;
+	const char *ports;
+	bool is_host_enabled = false;
+	bool is_ports_enabled = false;
 
-	if (argc < 3)
+	const char *short_opts = "p:s:ha";
+	struct option long_options[] = {
+		{"hostname", required_argument, NULL, 's'},
+		{"ports", required_argument, NULL, 'p'},
+		{"help", no_argument, NULL, 'h'},
+		{"about", no_argument, NULL, 'a'},
+		{NULL, 0, NULL, 0}};
+	while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1)
 	{
-		printf("Please specify a hostname and port\n");
-		exit(1);
+		switch (opt)
+		{
+		case 'h':
+			printf("Port Scanner Application");
+			printf("  -s, --hostname       Specify host name like abc.com\n");
+			printf("  -h, --help           Print the help board\n");
+			printf("  -p, --ports          <Port1,Port2...>   Ports in comma sepearted styles ex: 1,23,4444,80 etc.\n");
+			printf("  -a, --about          Port scanner application created by Asad Mukhtar\n");
+			return EXIT_SUCCESS;
+		case 's':
+		{
+			// Check if host is null
+			if (optarg[0] == '\0')
+			{
+				printf("Error: \"-s\" parameter requires exactly one value.\n");
+				return 1;
+			}
+			// Save host parameter
+			host = optarg;
+			is_host_enabled = true;
+		}
+		break;
+		case 'p':
+		{ // Check if host is null
+			if (optarg[0] == '\0')
+			{
+				printf("Error: \"-s\" parameter requires exactly one value.\n");
+				return 1;
+			}
+			ports = optarg;
+			is_ports_enabled = true;
+		}
+		break;
+		case 'a':
+		{
+			printf("Ports scanner Version 1.0\nCreated with love by Asad Mukhtar\nFor open source code check asad-360@github.com\n");
+		}
+		break;
+		default:
+			abort();
+		}
 	}
-	char *detination_ip_from_input = argv[1];
-	char *ports_incsv_from_input = argv[2];
 
-	if (strlen(ports_incsv_from_input) < 1)
+	// Process non-option arguments (if any)
+	for (int i = optind; i < argc; i++)
 	{
-		printf("No ports are specificed for host %s to be scanned\n", detination_ip_from_input);
-		exit(1);
+		printf("unrelated comman %s press -h for help\n", argv[i]);
 	}
-	// struct in_addr
-	struct in_addr dest_ip = setup_destination_ip(detination_ip_from_input);
-	// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
-	struct in_addr source_ip = setup_source_ip();
+	if (is_host_enabled && is_ports_enabled)
+	{
 
-	start_processing(source_ip, dest_ip, ports_incsv_from_input, print_callback_message);
+		if (strlen(ports) < 1)
+		{
+			printf("No ports are specificed for host %s to be scanned\n", host);
+			exit(1);
+		}
+		// struct in_addr
+		struct in_addr dest_ip = setup_destination_ip(host);
+		// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
+		struct in_addr source_ip = setup_source_ip();
 
-	return 0;
+		start_processing(source_ip, dest_ip, ports, print_callback_message);
+	}
+	else
+	{
+		printf("please spcify both host and ports for scan operation\n");
+	}
+
+	return EXIT_SUCCESS;
 }
-void print_callback_message(const char *message)
-{
-	printf(message);
-}
+
 // Parse a comma-separated list of ports into an array of integers
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list)
 {
@@ -351,6 +415,10 @@ void process_ack_from_packet(unsigned char *buffer, int size, struct in_addr des
 				printf("Port %d closed\n", ntohs(tcph->source));
 			}
 	}
+}
+void print_callback_message(const char *message)
+{
+	printf(message);
 }
 /*
  Checksums - IP and TCP
