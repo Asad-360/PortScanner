@@ -22,6 +22,7 @@ char * hostname_to_ip(char * );
 int get_local_ip (char *);
 void send_syn_packet();
 int create_raw_tcp_socket();
+static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
 struct pseudo_header    //needed for checksum calculation
 {
 	unsigned int source_address;
@@ -53,12 +54,20 @@ int main(int argc, char *argv[])
 	
 	// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
     struct in_addr source_ip = setup_source_ip();
-	if (argc < 2)
+	if (argc < 3)
     {
-        printf("Please specify a hostname \n");
+        printf("Please specify a hostname and port\n");
         exit(1);
     }
 	char *detination_ip_from_input = argv[1];
+	char *ports_incsv_from_input =   argv[2];
+	
+	if(strlen(ports_incsv_from_input) < 1){
+		printf("No ports are specificed for host %s to be scanned\n",detination_ip_from_input);
+        exit(1);
+	}
+	int ports_array[1024] = {0};
+	unsigned int port_count = parse_ports_list(ports_incsv_from_input, ports_array);
     //struct in_addr 
 	struct in_addr dest_ip = setup_destination_ip(detination_ip_from_input);
 
@@ -76,15 +85,29 @@ int main(int argc, char *argv[])
 	printf("Starting to send syn packets\n");
 	//80,22,9929,11211,31337
 	int sourcePort = 43591;
-	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,22);
-	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,9929);
-	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,11211);
-	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,31337);
+	for (size_t i = 0; i < port_count; i++)
+	{
+		send_syn_packet(s,&source_ip , sourcePort,&dest_ip,ports_array[i]);
+		//send_syn_packet(s,&source_ip , sourcePort,&dest_ip,9929);
+		//send_syn_packet(s,&source_ip , sourcePort,&dest_ip,11211);
+		//send_syn_packet(s,&source_ip , sourcePort,&dest_ip,31337);
+	}
 
 	pthread_join( sniffer_thread , NULL);
-	printf("%d" , iret1);
-	
+	printf("%d" , iret1);	
 	return 0;
+}
+// Parse a comma-separated list of ports into an array of integers
+static unsigned int parse_ports_list(char *port_list, int *formatted_port_list) {
+    unsigned int count = 0;
+    char *token = strtok(port_list, ",");
+    
+    while (token != NULL) {
+        formatted_port_list[count++] = atoi(token);
+        token = strtok(NULL, ",");
+    }
+    
+    return count;
 }
 struct in_addr setup_destination_ip(char *target)
 {
