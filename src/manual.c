@@ -1,5 +1,5 @@
 /*
-	TCP Syn port scanner code in C with Linux Sockets :)
+	TCP send_syn_packet port scanner code in C with Linux Sockets :)
 */
 
 #include<stdio.h> //printf
@@ -13,29 +13,29 @@
 #include<netinet/tcp.h>	//Provides declarations for tcp header
 #include<netinet/ip.h>	//Provides declarations for ip header
 
-void * receive_ack( void *ptr );
-void process_packet(unsigned char* , int);
-void process_packet_new(unsigned char *, int);
-
+void * receive_callback( void *ptr );
+void process_ack_from_packet(unsigned char *, int,struct in_addr dest_ip);
 struct in_addr setup_source_ip();
-
+struct in_addr setup_destination_ip(char *targetip);
 unsigned short csum(unsigned short * , int );
 char * hostname_to_ip(char * );
 int get_local_ip (char *);
-void Syn();
+void send_syn_packet();
+
 struct pseudo_header    //needed for checksum calculation
 {
 	unsigned int source_address;
 	unsigned int dest_address;
 	unsigned char placeholder;
 	unsigned char protocol;
-	unsigned short tcp_length;
-	
+	unsigned short tcp_length;	
 	struct tcphdr tcp;
 };
 
-struct in_addr dest_ip;
-//struct in_addr source_ip;
+struct receive_callback_args {
+    struct in_addr  dest_ip;
+};
+
 
 int main(int argc, char *argv[])
 {
@@ -51,44 +51,24 @@ int main(int argc, char *argv[])
 		printf("Socket created.\n");
 	}
 	
-	char *target = argv[1];
 	// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
     struct in_addr source_ip = setup_source_ip();
+	if (argc < 2)
+    {
+        printf("Please specify a hostname \n");
+        exit(1);
+    }
+	char *tg = argv[1];
+    //struct in_addr 
+	struct in_addr dest_ip = setup_destination_ip(tg);
 
-    if(argc < 2)
-	{
-		printf("Please specify a hostname \n");
-		exit(1);
-	}
-	
-	if( inet_addr( target ) != -1)
-	{
-		dest_ip.s_addr = inet_addr( target );
-	}
-	else
-	{
-		char *ip = hostname_to_ip(target);
-		if(ip != NULL)
-		{
-			printf("%s resolved to %s \n" , target , ip);
-			//Convert domain name to IP
-			dest_ip.s_addr = inet_addr( hostname_to_ip(target) );
-		}
-		else
-		{
-			printf("Unable to resolve hostname : %s" , target);
-			exit(1);
-		}
-	}
-	
-	
-	
-	printf("Starting sniffer thread...\n");
+    printf("Starting sniffer thread...\n");
 	char *message1 = "Thread 1";
 	int  iret1;
 	pthread_t sniffer_thread;
-
-	if( pthread_create( &sniffer_thread , NULL ,  receive_ack , (void*) message1) < 0)
+	struct receive_callback_args  receive_ack_args;
+	receive_ack_args.dest_ip = dest_ip;
+	if( pthread_create( &sniffer_thread , NULL ,  receive_callback , (void*) &receive_ack_args) < 0)
 	{
 		printf ("Could not create sniffer thread. Error number : %d . Error message : %s \n" , errno , strerror(errno));
 		exit(0);
@@ -97,15 +77,39 @@ int main(int argc, char *argv[])
 	printf("Starting to send syn packets\n");
 	//80,22,9929,11211,31337
 	int sourcePort = 43591;
-	Syn(s,&source_ip , sourcePort,&dest_ip,22);
-	Syn(s,&source_ip , sourcePort,&dest_ip,9929);
-	Syn(s,&source_ip , sourcePort,&dest_ip,11211);
-	Syn(s,&source_ip , sourcePort,&dest_ip,31337);
+	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,22);
+	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,9929);
+	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,11211);
+	send_syn_packet(s,&source_ip , sourcePort,&dest_ip,31337);
 
 	pthread_join( sniffer_thread , NULL);
 	printf("%d" , iret1);
 	
 	return 0;
+}
+struct in_addr setup_destination_ip(char *target)
+{
+	struct in_addr l_dest_ip;
+    if (inet_addr(target) != -1)
+    {
+        l_dest_ip.s_addr = inet_addr(target);
+    }
+    else
+    {
+        char *ip = hostname_to_ip(target);
+        if (ip != NULL)
+        {
+            printf("%s resolved to %s \n", target, ip);
+            // Convert domain name to IP
+            l_dest_ip.s_addr = inet_addr(hostname_to_ip(target));
+        }
+        else
+        {
+            printf("Unable to resolve hostname : %s", target);
+            exit(1);
+        }
+    }
+	return l_dest_ip;
 }
 /// @brief This function get local ip address of the system and return its in_addr format suitable for raw protocol to be used in ipheader
 struct in_addr setup_source_ip()
@@ -120,7 +124,7 @@ struct in_addr setup_source_ip()
 
 /// @brief Send syn request
 /// @param s The socket file descriptor
-void Syn(int s ,  const struct in_addr *source_ip , int source_port,  const struct in_addr *dest_ip , int dest_port)
+void send_syn_packet(int s ,  const struct in_addr *source_ip , int source_port,  const struct in_addr *dest_ip , int dest_port)
 {
 	//Datagram to represent the packet
 	char datagram[4096];	
@@ -199,16 +203,16 @@ void Syn(int s ,  const struct in_addr *source_ip , int source_port,  const stru
 /*
 	Method to sniff incoming packets and look for Ack replies
 */
-void * receive_ack( void *ptr )
+void * receive_callback( void *ptr )
 {
+	struct receive_callback_args *args = (struct receive_callback_args *)ptr;
 	//Start the sniffer thing
-	start_sniffer();
+	struct in_addr dest_ip = args->dest_ip;
+	start_packet_sniffing(dest_ip);
 }
 
-int start_sniffer()
-{
-	int sock_raw;
-	
+int start_packet_sniffing(struct in_addr dest_ip)
+{	
 	int saddr_size , data_size;
 	struct sockaddr saddr;
 	
@@ -218,7 +222,7 @@ int start_sniffer()
 	fflush(stdout);
 	
 	//Create a raw socket that shall sniff
-	sock_raw = socket(AF_INET , SOCK_RAW , IPPROTO_TCP);
+	int sock_raw = socket(AF_INET , SOCK_RAW , IPPROTO_TCP);
 	
 	if(sock_raw < 0)
 	{
@@ -244,7 +248,7 @@ int start_sniffer()
 		x++;
 		
 		//Now process the packet
-		process_packet_new(buffer , data_size);
+		process_ack_from_packet(buffer , data_size , dest_ip);
 	}
 	
 	close(sock_raw);
@@ -252,7 +256,7 @@ int start_sniffer()
 	fflush(stdout);
 	return 0;
 }
-void process_packet_new(unsigned char* buffer, int size) {
+void process_ack_from_packet(unsigned char* buffer, int size , struct in_addr dest_ip) {
     // Get the IP Header part of this packet
     struct iphdr *iph = (struct iphdr*)buffer;
     unsigned short iphdrlen;
@@ -281,38 +285,6 @@ void process_packet_new(unsigned char* buffer, int size) {
         }
     }
 }
-void process_packet(unsigned char* buffer, int size)
-{
-	//Get the IP Header part of this packet
-	struct iphdr *iph = (struct iphdr*)buffer;
-	struct sockaddr_in source,dest;
-	unsigned short iphdrlen;
-	
-	if(iph->protocol == 6)
-	{
-		struct iphdr *iph = (struct iphdr *)buffer;
-		iphdrlen = iph->ihl*4;
-	
-		struct tcphdr *tcph=(struct tcphdr*)(buffer + iphdrlen);
-			
-		memset(&source, 0, sizeof(source));
-		source.sin_addr.s_addr = iph->saddr;
-	
-		memset(&dest, 0, sizeof(dest));
-		dest.sin_addr.s_addr = iph->daddr;
-		
-		if(tcph->syn == 1 && tcph->ack == 1 && source.sin_addr.s_addr == dest_ip.s_addr )
-		{
-			printf("Port %d open \n" , ntohs(tcph->source));
-			//fflush(stdout);
-		}else{
-			printf("Port %d closed \n" , ntohs(tcph->source));
-			//fflush(stdout);
-			return;
-		}
-	}
-}
-
 /*
  Checksums - IP and TCP
  */
