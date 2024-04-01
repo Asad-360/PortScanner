@@ -6,10 +6,16 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/src/man",
-            //"args": ["-s", "scanme.nmap.org", "-p", "80,22,9929,11211,31337"],
             "args": [
-                "scanme.nmap.org"
+                "-s",
+                "scanme.nmap.org",
+                "-p",
+                "20,8080"
+                // "80,22,9929,11211,31337"
             ],
+            // "args": [
+            //     "scanme.nmap.org"
+            // ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

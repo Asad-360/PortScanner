@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h> //Provides declarations for tcp header
 #include <netinet/ip.h>	 //Provides declarations for ip header
+#include <time.h>		 // for time
 
 #pragma region callback functions
 typedef void (*CallbackFunc)(const char *);
@@ -31,7 +32,7 @@ void send_syn_packet();
 int create_raw_tcp_socket();
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
 int start_packet_sniffing(struct in_addr dest_ip);
-
+int searched_ports_count = 0;
 #pragma structs section
 struct pseudo_header // needed for checksum calculation
 {
@@ -175,6 +176,18 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 	callback(error_message);
 
 	int iret1;
+
+	sprintf(error_message, "Starting to send syn packets\n");
+	callback(error_message);
+	// 80,22,9929,11211,31337
+	int sourcePort = 43591;
+	for (size_t i = 0; i < port_count; i++)
+	{
+		send_syn_packet(s, &source_ip, sourcePort, &dest_ip, ports_array[i]);
+		searched_ports_count++;
+	}
+	sprintf(error_message, "total ports count=%d", searched_ports_count);
+	callback(error_message);
 	pthread_t sniffer_thread;
 	struct receive_callback_args receive_ack_args;
 	receive_ack_args.dest_ip = dest_ip;
@@ -184,16 +197,6 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 		callback(error_message);
 		exit(0);
 	}
-
-	sprintf(error_message, "Starting to send syn packets\n");
-	callback(error_message);
-	// 80,22,9929,11211,31337
-	int sourcePort = 43591;
-	for (size_t i = 0; i < port_count; i++)
-	{
-		send_syn_packet(s, &source_ip, sourcePort, &dest_ip, ports_array[i]);
-	}
-
 	pthread_join(sniffer_thread, NULL);
 	printf("%d", iret1);
 }
@@ -359,8 +362,14 @@ int start_packet_sniffing(struct in_addr dest_ip)
 	saddr_size = sizeof saddr;
 	int x = 0;
 
-	while (x != 1000)
+	time_t start_time, current_time;
+
+	// Initialize the start time
+	start_time = time(NULL);
+
+	while (true || searched_ports_count <= 0)
 	{
+		current_time = time(NULL);
 		// Receive a packet
 		data_size = recvfrom(sock_raw, buffer, 65536, 0, &saddr, &saddr_size);
 
@@ -370,8 +379,11 @@ int start_packet_sniffing(struct in_addr dest_ip)
 			fflush(stdout);
 			return 1;
 		}
-		x++;
-
+		if (current_time - start_time >= 2)
+		{
+			printf("Exiting loop as 10 seconds have elapsed.\n");
+			break;
+		}
 		// Now process the packet
 		process_ack_from_packet(buffer, data_size, dest_ip);
 	}
@@ -403,6 +415,7 @@ void process_ack_from_packet(unsigned char *buffer, int size, struct in_addr des
 
 				printf("Received SYN-ACK from %s:%d\n", inet_ntoa(source.sin_addr), ntohs(tcph->source));
 				printf("Port %d open\n", ntohs(tcph->source));
+				searched_ports_count--;
 			}
 			else
 			{
@@ -413,6 +426,7 @@ void process_ack_from_packet(unsigned char *buffer, int size, struct in_addr des
 
 				printf("Received packet from %s:%d\n", inet_ntoa(source.sin_addr), ntohs(tcph->source));
 				printf("Port %d closed\n", ntohs(tcph->source));
+				searched_ports_count--;
 			}
 	}
 }
