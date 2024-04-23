@@ -14,12 +14,14 @@
 #include <netinet/tcp.h> //Provides declarations for tcp header
 #include <netinet/ip.h>	 //Provides declarations for ip header
 #include <time.h>		 // for time
-
+#include <fcntl.h>
 #pragma region callback functions
 typedef void (*CallbackFunc)(const char *);
 void print_callback_message(const char *message);
 void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, CallbackFunc callback);
 #pragma endregion
+#define TIMEOUT_SEC 5
+#define TIMEOUT_USEC 0
 
 void *receive_callback(void *ptr);
 void process_ack_from_packet(unsigned char *, int, struct in_addr dest_ip);
@@ -331,11 +333,24 @@ int create_raw_tcp_socket()
 {
 	// Create a raw socket
 	int sock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+	// fcntl(sock_raw, F_SETFL, O_NONBLOCK);
+
 	if (sock_raw < 0)
 	{
 		perror("Socket creation failed");
 		return -1;
 	}
+
+	// // Set timeout
+	// struct timeval timeout;
+	// timeout.tv_sec = TIMEOUT_SEC;
+	// timeout.tv_usec = TIMEOUT_USEC;
+	// if (setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
+	// {
+	// 	perror("setsockopt() error");
+	// 	close(sock_raw);
+	// 	return -1;
+	// }
 	return sock_raw;
 }
 
@@ -358,31 +373,39 @@ int start_packet_sniffing(struct in_addr dest_ip)
 		fflush(stdout);
 		return 1;
 	}
-
+	struct timeval tv;
+	tv.tv_sec = TIMEOUT_SEC;
+	tv.tv_usec = TIMEOUT_USEC;
+	if (setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+	{
+		perror("setsockopt() error");
+		close(sock_raw);
+		return -1;
+	}
+	// setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
 	saddr_size = sizeof saddr;
 	int x = 0;
 
-	time_t start_time, current_time;
-
-	// Initialize the start time
-	start_time = time(NULL);
-
 	while (true || searched_ports_count <= 0)
 	{
-		current_time = time(NULL);
 		// Receive a packet
 		data_size = recvfrom(sock_raw, buffer, 65536, 0, &saddr, &saddr_size);
 
 		if (data_size < 0)
 		{
-			printf("Recvfrom error , failed to get packets\n");
-			fflush(stdout);
-			return 1;
-		}
-		if (current_time - start_time >= 2)
-		{
-			printf("Exiting loop as 10 seconds have elapsed.\n");
-			break;
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+			{
+				// Timeout occurred
+				printf("Timeout occurred while sniffing packets.Closing the operation.\n");
+				fflush(stdout);
+				break;
+			}
+			else
+			{
+				printf("Recvfrom error , failed to get packets\n");
+				fflush(stdout);
+				return 1;
+			}
 		}
 		// Now process the packet
 		process_ack_from_packet(buffer, data_size, dest_ip);
