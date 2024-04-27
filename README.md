@@ -42,3 +42,10 @@ Port 8080 closed
 Received packet from 45.33.32.156:20
 Port 20 closed
 ```
+## Checklist
+[x] Basic port scanner
+[x] TCP Syn Ack Scanner
+[x] Timeout while scanning
+[ ] Vanilla scan
+[ ] Vanilla scan multithreaded
+[ ] Sweep scan
