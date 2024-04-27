@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		printf("please spcify both host and ports for scan operation\n");
+		printf("please specify both host and ports for scan operation\n");
 	}
 
 	return EXIT_SUCCESS;
