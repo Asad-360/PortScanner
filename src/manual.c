@@ -18,7 +18,7 @@
 #pragma region callback functions
 typedef void (*CallbackFunc)(const char *);
 void print_callback_message(const char *message);
-void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, CallbackFunc callback);
+void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, int timeout, CallbackFunc callback);
 #pragma endregion
 #define TIMEOUT_SEC 5
 #define TIMEOUT_USEC 0
@@ -33,7 +33,7 @@ int get_local_ip(char *);
 void send_syn_packet();
 int create_raw_tcp_socket();
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
-int start_packet_sniffing(struct in_addr dest_ip);
+int start_packet_sniffing(struct in_addr dest_ip, int ptimeout);
 int searched_ports_count = 0;
 #pragma structs section
 struct pseudo_header // needed for checksum calculation
@@ -49,6 +49,7 @@ struct pseudo_header // needed for checksum calculation
 struct receive_callback_args
 {
 	struct in_addr dest_ip;
+	int timout;
 };
 
 #pragma endregion
@@ -58,13 +59,16 @@ int main(int argc, char *argv[])
 	int option_index = 0;
 	const char *host;
 	const char *ports;
+	const char *timeout_arg;
 	bool is_host_enabled = false;
 	bool is_ports_enabled = false;
+	bool is_timeout_enabled = false;
 
-	const char *short_opts = "p:s:ha";
+	const char *short_opts = "p:s:t:ha";
 	struct option long_options[] = {
 		{"hostname", required_argument, NULL, 's'},
 		{"ports", required_argument, NULL, 'p'},
+		{"timeout", required_argument, NULL, 't'},
 		{"help", no_argument, NULL, 'h'},
 		{"about", no_argument, NULL, 'a'},
 		{NULL, 0, NULL, 0}};
@@ -77,6 +81,7 @@ int main(int argc, char *argv[])
 			printf("  -s, --hostname       Specify host name like abc.com\n");
 			printf("  -h, --help           Print the help board\n");
 			printf("  -p, --ports          <Port1,Port2...>   Ports in comma sepearted styles ex: 1,23,4444,80 etc.\n");
+			printf("  -t, --timeout        The timeout in seconds. after this time the scanning operation will be stopped.\n");
 			printf("  -a, --about          Port scanner application created by Asad Mukhtar\n");
 			return EXIT_SUCCESS;
 		case 's':
@@ -103,6 +108,16 @@ int main(int argc, char *argv[])
 			is_ports_enabled = true;
 		}
 		break;
+		case 't':
+		{ // Check if host is null
+			if (optarg[0] == '\0')
+			{
+				printf("Error: \"-s\" parameter requires exactly one value.\n");
+				return 1;
+			}
+			timeout_arg = optarg;
+			is_timeout_enabled = true;
+		}
 		case 'a':
 		{
 			printf("Ports scanner Version 1.0\nCreated with love by Asad Mukhtar\nFor open source code check asad-360@github.com\n");
@@ -130,8 +145,13 @@ int main(int argc, char *argv[])
 		struct in_addr dest_ip = setup_destination_ip(host);
 		// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
 		struct in_addr source_ip = setup_source_ip();
+		int timeout = -1;
+		if (is_timeout_enabled)
+		{
+			timeout = atoi(timeout_arg);
+		}
 
-		start_processing(source_ip, dest_ip, ports, print_callback_message);
+		start_processing(source_ip, dest_ip, ports, timeout, print_callback_message);
 	}
 	else
 	{
@@ -155,7 +175,7 @@ static unsigned int parse_ports_list(char *port_list, int *formatted_port_list)
 
 	return count;
 }
-void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, CallbackFunc callback)
+void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, int ptimeout, CallbackFunc callback)
 {
 	// Create a raw socket
 	const int MAX_ERROR_MESSAGE_LENGTH = 256;
@@ -193,6 +213,12 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 	pthread_t sniffer_thread;
 	struct receive_callback_args receive_ack_args;
 	receive_ack_args.dest_ip = dest_ip;
+	if (ptimeout > -1)
+	{
+		receive_ack_args.timout = ptimeout;
+		sprintf(error_message, "Timeout is set to : %d\n", receive_ack_args.timout);
+	}
+
 	if (pthread_create(&sniffer_thread, NULL, receive_callback, (void *)&receive_ack_args) < 0)
 	{
 		sprintf(error_message, "Could not create sniffer thread. Error number : %d . Error message : %s \n", errno, strerror(errno));
@@ -322,7 +348,8 @@ void *receive_callback(void *ptr)
 	struct receive_callback_args *args = (struct receive_callback_args *)ptr;
 	// Start the sniffer thing
 	struct in_addr dest_ip = args->dest_ip;
-	start_packet_sniffing(dest_ip);
+	int timeout_from_args = args->timout;
+	start_packet_sniffing(dest_ip, timeout_from_args);
 }
 
 /// @brief Create a new raw socket that receive
@@ -354,7 +381,7 @@ int create_raw_tcp_socket()
 	return sock_raw;
 }
 
-int start_packet_sniffing(struct in_addr dest_ip)
+int start_packet_sniffing(struct in_addr dest_ip, int ptimeout)
 {
 	int saddr_size, data_size;
 	struct sockaddr saddr;
@@ -374,8 +401,8 @@ int start_packet_sniffing(struct in_addr dest_ip)
 		return 1;
 	}
 	struct timeval tv;
-	tv.tv_sec = TIMEOUT_SEC;
-	tv.tv_usec = TIMEOUT_USEC;
+	tv.tv_sec = ptimeout;
+	tv.tv_usec = 0;
 	if (setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
 	{
 		perror("setsockopt() error");
