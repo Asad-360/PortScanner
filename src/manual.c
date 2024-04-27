@@ -19,6 +19,7 @@
 typedef void (*CallbackFunc)(const char *);
 void print_callback_message(const char *message);
 void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, int timeout, CallbackFunc callback);
+char **split_ip(char *arg, int *length);
 #pragma endregion
 #define TIMEOUT_SEC 5
 #define TIMEOUT_USEC 0
@@ -141,6 +142,17 @@ int main(int argc, char *argv[])
 			printf("No ports are specificed for host %s to be scanned\n", host);
 			exit(1);
 		}
+		// Temp adding sweepscan
+		int length_of_ip = 0;
+		char **ips = split_ip(host, &length_of_ip);
+		for (size_t i = 0; i < length_of_ip; i++)
+		{
+			char *ip = "";
+			ip = ips[i];
+			printf("%s\n", ip);
+		}
+
+		return 1;
 		// struct in_addr
 		struct in_addr dest_ip = setup_destination_ip(host);
 		// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
@@ -161,6 +173,38 @@ int main(int argc, char *argv[])
 	return EXIT_SUCCESS;
 }
 
+#pragma region SWEEP_SCAN
+char **split_ip(char *arg, int *length)
+{
+	int size = 20; // Todo need to make it efficent to take less space.
+	*length = size;
+	char **ip_array = malloc((size + 1) * sizeof(char *)); // +1 for NULL terminator
+	if (ip_array == NULL)
+	{
+		printf("Memory allocation failed!\n");
+		exit(1);
+	}
+	// Tokenize the string
+	char *token = strtok(arg, ",");
+	int i = 0;
+	// Add tokens to the array
+	while (token != NULL && i < size)
+	{
+		ip_array[i] = malloc((strlen(token) + 1) * sizeof(char));
+		if (ip_array[i] == NULL)
+		{
+			printf("Memory allocation failed!\n");
+			exit(1);
+		}
+		strcpy(ip_array[i], token);
+		token = strtok(NULL, ",");
+		i++;
+	}
+	ip_array[i] = NULL; // Setting the last element to NULL
+	*length = i;		// Assigning the length of the array
+	return ip_array;
+}
+#pragma endregion
 // Parse a comma-separated list of ports into an array of integers
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list)
 {
@@ -483,7 +527,7 @@ void process_ack_from_packet(unsigned char *buffer, int size, struct in_addr des
 }
 void print_callback_message(const char *message)
 {
-	printf(message);
+	printf("%s", message);
 }
 /*
  Checksums - IP and TCP
