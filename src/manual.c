@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
 				if (strlen(ip) > 0)
 					printf("%s %d\n", ip, strlen(ip));
 				// struct in_addr
-				struct in_addr dest_ip = setup_destination_ip(host);
+				struct in_addr dest_ip = setup_destination_ip(ip);
 				dest_addr_list[i] = dest_ip;
 			}
 			// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.

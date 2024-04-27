@@ -8,7 +8,7 @@
             "program": "${workspaceFolder}/src/man",
             "args": [
                 "-s",
-                "scanme.nmap.org,google.com",
+                "scanme.nmap.org,www.example.com",
                 "-p",
                 "20,8080",
                 "-t",
