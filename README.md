@@ -46,7 +46,7 @@ Port 20 closed
 - [x] Basic port scanner
 - [x] TCP Syn Ack Scanner
 - [x] Timeout while scanning
-- [ ] Timeout check for alphnumeric values
+- [x] Timeout check for alphnumeric values
 - [ ] Vanilla scan
 - [ ] Vanilla scan multithreaded
 - [ ] Sweep scan

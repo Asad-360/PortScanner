@@ -208,7 +208,7 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 		send_syn_packet(s, &source_ip, sourcePort, &dest_ip, ports_array[i]);
 		searched_ports_count++;
 	}
-	sprintf(error_message, "total ports count=%d", searched_ports_count);
+	sprintf(error_message, "total ports count=%d\n", searched_ports_count);
 	callback(error_message);
 	pthread_t sniffer_thread;
 	struct receive_callback_args receive_ack_args;
@@ -217,6 +217,7 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 	{
 		receive_ack_args.timout = ptimeout;
 		sprintf(error_message, "Timeout is set to : %d\n", receive_ack_args.timout);
+		callback(error_message);
 	}
 
 	if (pthread_create(&sniffer_thread, NULL, receive_callback, (void *)&receive_ack_args) < 0)
