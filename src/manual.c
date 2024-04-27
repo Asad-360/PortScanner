@@ -19,6 +19,8 @@
 typedef void (*CallbackFunc)(const char *);
 void print_callback_message(const char *message);
 void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *dest_ports_string, int timeout, CallbackFunc callback);
+void start_processing_bulk(struct in_addr source_ip, struct in_addr dest_ip[], int dest_ip_length, char *dest_ports_string, int timeout, CallbackFunc callback);
+
 char **split_ip(char *arg, int *length);
 #pragma endregion
 #define TIMEOUT_SEC 5
@@ -35,6 +37,7 @@ void send_syn_packet();
 int create_raw_tcp_socket();
 static unsigned int parse_ports_list(char *port_list, int *formatted_port_list);
 int start_packet_sniffing(struct in_addr dest_ip, int ptimeout);
+int start_packet_sniffing_bulk(struct in_addr dest_ip[], int dest_ip_lengths, int ptimeout);
 int searched_ports_count = 0;
 #pragma structs section
 struct pseudo_header // needed for checksum calculation
@@ -50,7 +53,9 @@ struct pseudo_header // needed for checksum calculation
 struct receive_callback_args
 {
 	struct in_addr dest_ip;
+	int length;
 	int timout;
+	struct in_addr *dest_ips;
 };
 
 #pragma endregion
@@ -145,25 +150,45 @@ int main(int argc, char *argv[])
 		// Temp adding sweepscan
 		int length_of_ip = 0;
 		char **ips = split_ip(host, &length_of_ip);
-		for (size_t i = 0; i < length_of_ip; i++)
+		if (length_of_ip == 0)
 		{
-			char *ip = "";
-			ip = ips[i];
-			printf("%s\n", ip);
-		}
+			/* code */
+			struct in_addr dest_ip = setup_destination_ip(host);
+			// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
+			struct in_addr source_ip = setup_source_ip();
+			int timeout = -1;
+			if (is_timeout_enabled)
+			{
+				timeout = atoi(timeout_arg);
+			}
 
-		return 1;
-		// struct in_addr
-		struct in_addr dest_ip = setup_destination_ip(host);
-		// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
-		struct in_addr source_ip = setup_source_ip();
-		int timeout = -1;
-		if (is_timeout_enabled)
+			start_processing(source_ip, dest_ip, ports, timeout, print_callback_message);
+		}
+		else
 		{
-			timeout = atoi(timeout_arg);
-		}
+			struct in_addr dest_addr_list[length_of_ip];
 
-		start_processing(source_ip, dest_ip, ports, timeout, print_callback_message);
+			for (size_t i = 0; i < length_of_ip; i++)
+			{
+				char *ip = "";
+				ip = ips[i];
+				if (strlen(ip) > 0)
+					printf("%s %d\n", ip, strlen(ip));
+				// struct in_addr
+				struct in_addr dest_ip = setup_destination_ip(host);
+				dest_addr_list[i] = dest_ip;
+			}
+			// source ip to inet_adr_t , the buffer is used to get source ip in ipv4 format.
+			struct in_addr source_ip = setup_source_ip();
+			int timeout = -1;
+			if (is_timeout_enabled)
+			{
+				timeout = atoi(timeout_arg);
+			}
+
+			start_processing_bulk(source_ip, dest_addr_list, length_of_ip, ports, timeout, print_callback_message);
+		}
+		// return 1;
 	}
 	else
 	{
@@ -257,6 +282,65 @@ void start_processing(struct in_addr source_ip, struct in_addr dest_ip, char *de
 	pthread_t sniffer_thread;
 	struct receive_callback_args receive_ack_args;
 	receive_ack_args.dest_ip = dest_ip;
+	if (ptimeout > -1)
+	{
+		receive_ack_args.timout = ptimeout;
+		sprintf(error_message, "Timeout is set to : %d\n", receive_ack_args.timout);
+		callback(error_message);
+	}
+
+	if (pthread_create(&sniffer_thread, NULL, receive_callback, (void *)&receive_ack_args) < 0)
+	{
+		sprintf(error_message, "Could not create sniffer thread. Error number : %d . Error message : %s \n", errno, strerror(errno));
+		callback(error_message);
+		exit(0);
+	}
+	pthread_join(sniffer_thread, NULL);
+	printf("%d", iret1);
+}
+
+void start_processing_bulk(struct in_addr source_ip, struct in_addr dest_ip[], int dest_ip_length, char *dest_ports_string, int ptimeout, CallbackFunc callback)
+{
+	// Create a raw socket
+	const int MAX_ERROR_MESSAGE_LENGTH = 256;
+	int s = create_raw_tcp_socket();
+	char error_message[MAX_ERROR_MESSAGE_LENGTH];
+	if (s < 0)
+	{
+		sprintf(error_message, "Error creating socket. Error number: %d. Error message: %s\n", errno, strerror(errno));
+		exit(0);
+	}
+	else
+	{
+		sprintf(error_message, "Socket created.\n");
+	}
+	callback(error_message);
+	int ports_array[1024] = {0};
+	unsigned int port_count = parse_ports_list(dest_ports_string, ports_array);
+
+	sprintf(error_message, "Starting sniffer thread...\n");
+	callback(error_message);
+
+	int iret1;
+
+	sprintf(error_message, "Starting to send syn packets\n");
+	callback(error_message);
+	// 80,22,9929,11211,31337
+	int sourcePort = 43591;
+	for (size_t i = 0; i < port_count; i++)
+	{
+		for (size_t i = 0; i < dest_ip_length; i++)
+		{
+			send_syn_packet(s, &source_ip, sourcePort, &dest_ip[i], ports_array[i]);
+			searched_ports_count++;
+		}
+	}
+	sprintf(error_message, "total ports count=%d\n", searched_ports_count);
+	callback(error_message);
+	pthread_t sniffer_thread;
+	struct receive_callback_args receive_ack_args;
+	receive_ack_args.dest_ips = dest_ip;
+	receive_ack_args.length = dest_ip_length;
 	if (ptimeout > -1)
 	{
 		receive_ack_args.timout = ptimeout;
@@ -393,8 +477,17 @@ void *receive_callback(void *ptr)
 	struct receive_callback_args *args = (struct receive_callback_args *)ptr;
 	// Start the sniffer thing
 	struct in_addr dest_ip = args->dest_ip;
+	struct in_addr *dest_ips = args->dest_ips;
+	int length = args->length;
 	int timeout_from_args = args->timout;
-	start_packet_sniffing(dest_ip, timeout_from_args);
+	if (dest_ips != NULL)
+	{
+		start_packet_sniffing_bulk(dest_ips, length, timeout_from_args); /* code */
+	}
+	else
+	{
+		start_packet_sniffing(dest_ip, timeout_from_args);
+	}
 }
 
 /// @brief Create a new raw socket that receive
@@ -481,6 +574,73 @@ int start_packet_sniffing(struct in_addr dest_ip, int ptimeout)
 		}
 		// Now process the packet
 		process_ack_from_packet(buffer, data_size, dest_ip);
+	}
+
+	close(sock_raw);
+	printf("Sniffer finished.");
+	fflush(stdout);
+	return 0;
+}
+
+int start_packet_sniffing_bulk(struct in_addr dest_ip[], int dest_ip_lengths, int ptimeout)
+{
+	int saddr_size, data_size;
+	struct sockaddr saddr;
+
+	unsigned char *buffer = (unsigned char *)malloc(65536); // Its Big!
+
+	printf("Sniffer initialising...\n");
+	fflush(stdout);
+
+	// Create a raw socket that shall sniff
+	int sock_raw = create_raw_tcp_socket();
+
+	if (sock_raw < 0)
+	{
+		printf("Socket Error\n");
+		fflush(stdout);
+		return 1;
+	}
+	struct timeval tv;
+	tv.tv_sec = ptimeout;
+	tv.tv_usec = 0;
+	if (setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+	{
+		perror("setsockopt() error");
+		close(sock_raw);
+		return -1;
+	}
+	// setsockopt(sock_raw, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
+	saddr_size = sizeof saddr;
+	int x = 0;
+
+	while (true || searched_ports_count <= 0)
+	{
+		// Receive a packet
+		data_size = recvfrom(sock_raw, buffer, 65536, 0, &saddr, &saddr_size);
+
+		if (data_size < 0)
+		{
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+			{
+				// Timeout occurred
+				printf("Timeout occurred while sniffing packets.Closing the operation.\n");
+				fflush(stdout);
+				break;
+			}
+			else
+			{
+				printf("Recvfrom error , failed to get packets\n");
+				fflush(stdout);
+				return 1;
+			}
+		}
+		// Now process the packet
+		for (size_t i = 0; i < dest_ip_lengths; i++)
+		{
+			process_ack_from_packet(buffer, data_size, dest_ip[i]);
+			/* code */
+		}
 	}
 
 	close(sock_raw);
